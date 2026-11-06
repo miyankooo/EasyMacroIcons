@@ -1,5 +1,5 @@
--- Right-click a macro in Blizzard's macro window for a menu: set its icon from a grid filtered by ID, or copy
--- the link to Wowhead's WoW Forever icon library to look an ID up.
+-- Right-click a macro in Blizzard's macro window for a menu: set its icon from a grid filtered by ID, copy and
+-- paste icons between macros, or copy the link to Wowhead's WoW Forever icon library to look an ID up.
 local addonName, ns = ...
 local UI = LibStub("LibNativeUI-1.0")
 
@@ -19,6 +19,7 @@ local copyModifier = IsMacClient() and IsMetaKeyDown or IsControlKeyDown
 local dialog, subject, box, grid, hint
 local linkDialog, linkBox
 local macroIndex, picked
+local copiedIcon   -- Copy Icon keeps it for Paste Icon until /reload; the system clipboard is out of reach.
 local allIcons, shown = nil, {}
 
 -- Every icon the macro window's picker offers, as file IDs in its order, each once. Loose icons come as
@@ -84,21 +85,27 @@ local function refreshGrid()
     refreshSubject()
 end
 
-local function apply()
-    local id = chosenIcon()
-    local name = GetMacroInfo(macroIndex)
-    if not (id and name) then return end
+-- Sets a macro's icon and says so when the game refuses it. Returns false only when combat blocks the change.
+local function setIcon(index, id)
+    local name = GetMacroInfo(index)
+    if not (id and name) then return true end
     if InCombatLockdown() then
         UI.Print(TITLE, "Macros change only out of combat.")
-        return
+        return false
     end
     -- The name is passed again on purpose: Forever kept the old icon when it was nil.
-    local index = EditMacro(macroIndex, name, id)
-    local _, icon = GetMacroInfo(index or macroIndex)
+    local newIndex = EditMacro(index, name, id)
+    local _, icon = GetMacroInfo(newIndex or index)
     if icon ~= id then
         UI.Print(TITLE, ("The game kept the old icon, so %d may not exist on this client."):format(id))
     end
-    dialog:Hide()
+    return true
+end
+
+local function apply()
+    local id = chosenIcon()
+    if not id then return end
+    if setIcon(macroIndex, id) then dialog:Hide() end
 end
 
 local function showIconTooltip(button)
@@ -159,6 +166,10 @@ local function openIconDialog(index)
     if not dialog then buildIconDialog() end
     if linkDialog then linkDialog:Hide() end
     macroIndex = index
+    -- Opens beside the macro window like Blizzard's own icon picker (MacroPopupFrame, TOPLEFT to TOPRIGHT).
+    -- Dragging still moves it; the next open puts it back beside the window.
+    dialog:ClearAllPoints()
+    dialog:SetPoint("TOPLEFT", MacroFrame, "TOPRIGHT", 0, 0)
     dialog:Show()
     box:SetText("")
     refreshGrid()
@@ -216,11 +227,23 @@ end
 
 local function openMenu(button)
     local index = MacroFrame:GetMacroDataIndex(button:GetElementData())
-    local name = GetMacroInfo(index)
+    local name, icon = GetMacroInfo(index)
     if not name then return end
+    icon = tonumber(icon)
     MenuUtil.CreateContextMenu(button, function(_, root)
         root:CreateTitle(name)
         root:CreateButton("Set Icon", function() openIconDialog(index) end)
+        local copy = root:CreateButton("Copy Icon", function()
+            copiedIcon = icon
+            UIErrorsFrame:AddMessage(("Icon %d copied."):format(icon), GREEN_FONT_COLOR:GetRGB())
+        end)
+        copy:SetEnabled(icon ~= nil)
+        -- The entry shows the copied icon and its ID, so it is clear what a paste sets.
+        local pasteLabel = copiedIcon
+            and ("Paste Icon %s %d"):format(CreateSimpleTextureMarkup(copiedIcon, UI.Size.icon, UI.Size.icon), copiedIcon)
+            or "Paste Icon"
+        local paste = root:CreateButton(pasteLabel, function() setIcon(index, copiedIcon) end)
+        paste:SetEnabled(copiedIcon ~= nil and copiedIcon ~= icon)
         root:CreateButton("Wowhead Link", openLinkDialog)
     end)
 end

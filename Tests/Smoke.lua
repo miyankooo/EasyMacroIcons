@@ -17,6 +17,8 @@ local function newFrame()
     function f:Show() self.shown = true end
     function f:Hide() self.shown = false end
     function f:GetHeight() return self.height end
+    function f:ClearAllPoints() self.point = nil end
+    function f:SetPoint(...) self.point = { ... } end
     function f:SetSize(w, h) self.width, self.height = w, h end
     for _, k in ipairs({ "SetNumeric", "SetMaxLetters", "SetFocus", "SetCustomStride", "SetCustomPadding" }) do
         f[k] = function() end
@@ -72,10 +74,15 @@ local copied = 0
 UIErrorsFrame = { AddMessage = function() copied = copied + 1 end }
 local menu
 MenuUtil = { CreateContextMenu = function(owner, gen)
-    menu = { title = nil, items = {} }
+    menu = { title = nil, items = {}, enabled = {} }
     local root = {}
     function root:CreateTitle(t) menu.title = t end
-    function root:CreateButton(label, fn) menu.items[label] = fn end
+    function root:CreateButton(label, fn)
+        local key = label:match("^Paste Icon") and "Paste Icon" or label
+        menu.items[key], menu.enabled[key], menu.labels = fn, true, menu.labels or {}
+        menu.labels[key] = label
+        return { SetEnabled = function(_, on) menu.enabled[key] = on end }
+    end
     gen(owner, root)
 end }
 wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
@@ -119,6 +126,8 @@ setIcon()
 assert(menu.title == "COOK" and menu.items["Wowhead Link"], "menu entries")
 local dialog = dialogs.EasyMacroIconsDialog
 assert(dialog.shown, "Set Icon did not open the dialog")
+assert(dialog.point and dialog.point[1] == "TOPLEFT" and dialog.point[2] == MacroFrame and dialog.point[3] == "TOPRIGHT",
+    "Set Icon dialog not beside the macro window")
 assert(#grid.items == 4, "icons not loaded once each without loose names: " .. #grid.items)
 
 -- Filtering by part of the ID, then picking from the grid.
@@ -171,6 +180,26 @@ linkBox.scripts.OnKeyDown(linkBox, "V")
 assert(copied == 0 and linkDialog.shown, "another key closed the dialog")
 linkBox.scripts.OnKeyDown(linkBox, "C")
 assert(copied == 1 and not linkDialog.shown, "copy not confirmed or dialog still open")
+
+-- Copy Icon on one macro, Paste Icon on another.
+macros[122] = { "FISH", 134400, "#showtooltip" }
+local button2 = newFrame()
+button2.GetElementData = function() return 2 end
+button2.IsMouseOver = function() return true end
+callback(button2, 2, true)
+button.hooks.OnMouseUp(button, "RightButton")
+assert(menu.enabled["Paste Icon"] == false, "Paste Icon enabled before a copy")
+local before = copied
+menu.items["Copy Icon"]()
+assert(copied == before + 1, "copy not confirmed")
+button.hooks.OnMouseUp(button, "RightButton")
+assert(menu.enabled["Paste Icon"] == false, "Paste Icon enabled on the macro that already has the icon")
+button2.hooks.OnMouseUp(button2, "RightButton")
+assert(menu.enabled["Paste Icon"] and menu.labels["Paste Icon"]:find("7808148"), "Paste Icon missing its icon")
+local n = #edits
+menu.items["Paste Icon"]()
+assert(#edits == n + 1 and edits[n + 1][1] == 122 and edits[n + 1][2] == "FISH" and edits[n + 1][3] == 7808148, "paste")
+assert(macros[122][2] == 7808148)
 
 macros[121] = nil
 menu = nil
