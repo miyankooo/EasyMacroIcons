@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: Macro Icon ID
+## Notes: Right-click a macro in the macro window to set its icon by icon ID.
+## Author: miyanko
+## Version: @project-version@
+## IconTexture: Interface\Icons\INV_Misc_QuestionMark
+
+Libs\LibStub\LibStub.lua
+Libs\LibNativeUI-1.0\LibNativeUI-1.0.lua
+
+MacroIconID.lua
