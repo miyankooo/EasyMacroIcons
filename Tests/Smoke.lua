@@ -52,7 +52,7 @@ MacroFrame = {
 }
 EventUtil = { ContinueOnAddOnLoaded = function(name, fn) assert(name == "Blizzard_MacroUI"); fn() end }
 
-assert(loadfile("MacroIconID.lua"))("MacroIconID", {})
+assert(loadfile("EasyMacroIcons.lua"))("EasyMacroIcons", {})
 assert(callback, "no acquire callback")
 
 local button = newFrame()

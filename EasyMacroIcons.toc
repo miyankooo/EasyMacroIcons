@@ -1,5 +1,5 @@
 ## Interface: 16001
-## Title: Macro Icon ID
+## Title: Easy Macro Icons
 ## Notes: Right-click a macro in the macro window to set its icon by icon ID.
 ## Author: miyanko
 ## Version: @project-version@
@@ -8,4 +8,4 @@
 Libs\LibStub\LibStub.lua
 Libs\LibNativeUI-1.0\LibNativeUI-1.0.lua
 
-MacroIconID.lua
+EasyMacroIcons.lua

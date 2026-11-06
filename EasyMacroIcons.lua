@@ -2,7 +2,7 @@
 local _, ns = ...
 local UI = LibStub("LibNativeUI-1.0")
 
-local TITLE = "Macro Icon ID"
+local TITLE = "Easy Macro Icons"
 
 local dialog, subject, box
 local macroIndex
@@ -36,7 +36,7 @@ local function apply()
 end
 
 local function build()
-    dialog = UI.CreateDialog({ name = "MacroIconIDDialog", title = TITLE, width = 400, parent = MacroFrame })
+    dialog = UI.CreateDialog({ name = "EasyMacroIconsDialog", title = TITLE, width = 400, parent = MacroFrame })
     subject = dialog:AddText("title", "")
     dialog:AddText("body", "Icon ID", UI.Space.tight)
     box = UI.CreateEditBox(dialog, UI.Size.input)

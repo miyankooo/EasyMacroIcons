@@ -1,4 +1,4 @@
-# Macro Icon ID
+# Easy Macro Icons
 
 A WoW Forever addon that sets any macro's icon from an icon ID, including icons the macro window's own picker does not list.
 
