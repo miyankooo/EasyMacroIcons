@@ -1,0 +1,10 @@
+package-as: EasyMacroIcons
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - Tests
+  - Tools
+  - release-please-config.json

@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/miyankooo/EasyMacroIcons/main/.github/icon.png" width="64" height="64" alt="">
+
 # Easy Macro Icons
 
 A WoW Forever addon that sets any macro's icon from an icon ID, including icons the macro window's own picker does not list.

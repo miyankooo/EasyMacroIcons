@@ -3,7 +3,8 @@
 ## Notes: Right-click a macro in the macro window to set its icon by icon ID, with a link to the Wowhead icon library.
 ## Author: miyanko
 ## Version: @project-version@
-## IconTexture: Interface\Icons\INV_Misc_QuestionMark
+## Category: Action Bars
+## IconTexture: Interface\Icons\inv_prg_icon_puzzle01
 
 Libs\LibStub\LibStub.lua
 Libs\LibNativeUI-1.0\LibNativeUI-1.0.lua
