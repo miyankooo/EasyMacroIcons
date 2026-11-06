@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Easy Macro Icons
-## Notes: Right-click a macro in the macro window to set its icon by icon ID.
+## Notes: Right-click a macro in the macro window to set its icon, searched by icon ID.
 ## Author: miyanko
 ## Version: @project-version@
 ## IconTexture: Interface\Icons\INV_Misc_QuestionMark
