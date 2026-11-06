@@ -67,6 +67,7 @@ IsMetaKeyDown = function() return true end
 IsControlKeyDown = function() return false end
 EditBox_HighlightText = function() end
 GREEN_FONT_COLOR = { GetRGB = function() return 0, 1, 0 end }
+C_Timer = { After = function(_, fn) fn() end }
 local copied = 0
 UIErrorsFrame = { AddMessage = function() copied = copied + 1 end }
 local menu
@@ -115,7 +116,7 @@ end
 button.hooks.OnMouseUp(button, "LeftButton")
 assert(not menu, "left click opened the menu")
 setIcon()
-assert(menu.title == "COOK" and menu.items["Copy Wowhead Icon Link"], "menu entries")
+assert(menu.title == "COOK" and menu.items["Wowhead Link"], "menu entries")
 local dialog = dialogs.EasyMacroIconsDialog
 assert(dialog.shown, "Set Icon did not open the dialog")
 assert(#grid.items == 4, "icons not loaded once each without loose names: " .. #grid.items)
@@ -158,19 +159,18 @@ dialog.buttons.Okay()
 assert(#edits == 4, "text without an ID applied")
 dialog:Hide()
 
--- The link dialog keeps its link, confirms a copy and hands over to Set Icon.
+-- The link dialog keeps its link, and one copy keypress confirms and closes it, as in Player Armory Link.
 button.hooks.OnMouseUp(button, "RightButton")
-menu.items["Copy Wowhead Icon Link"]()
+menu.items["Wowhead Link"]()
 local linkDialog = dialogs.EasyMacroIconsLinkDialog
 assert(linkDialog.shown and linkBox:GetText() == "https://www.wowhead.com/forever/icons")
 linkBox.text = "x"
 linkBox.scripts.OnTextChanged(linkBox, true)
 assert(linkBox:GetText() == "https://www.wowhead.com/forever/icons", "link was editable")
+linkBox.scripts.OnKeyDown(linkBox, "V")
+assert(copied == 0 and linkDialog.shown, "another key closed the dialog")
 linkBox.scripts.OnKeyDown(linkBox, "C")
-assert(copied == 1 and linkDialog.shown, "copy not confirmed or dialog closed")
-linkDialog.buttons["Set Icon"]()
-assert(dialog.shown and not linkDialog.shown, "Set Icon did not switch dialogs")
-dialog:Hide()
+assert(copied == 1 and not linkDialog.shown, "copy not confirmed or dialog still open")
 
 macros[121] = nil
 menu = nil

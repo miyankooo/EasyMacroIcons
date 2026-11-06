@@ -6,7 +6,8 @@ A WoW Forever addon that sets any macro's icon from an icon ID, including icons 
 
 ## Features
 
-- Right-click a macro in the macro window for Set Icon and Copy Wowhead Icon Link.
+- Right-click a macro in the macro window for Set Icon and Wowhead Link.
+- Wowhead Link shows the WoW Forever icon library's link already selected. One keypress copies it.
 - Type part of an icon ID to filter every icon the macro window offers, then click one.
 - Paste a full icon ID or a whole Wowhead icon link, even for icons the macro window does not list.
 - Shows the new icon beside the macro name before you set it.
@@ -15,7 +16,7 @@ A WoW Forever addon that sets any macro's icon from an icon ID, including icons 
 ## Usage
 
 1. Open the macro window with `/macro`.
-2. Right-click a macro and pick Copy Wowhead Icon Link. Copy the link and open it in your browser.
+2. Right-click a macro and pick Wowhead Link. Press Cmd+C on macOS or Ctrl+C on Windows, then paste the link into your browser.
 3. Open an icon there. Its ID is the number after `icon=` in the address.
-4. Click Set Icon, or right-click the macro again and pick Set Icon.
+4. Right-click the macro again and pick Set Icon.
 5. Type the ID or paste the icon's link, then press Enter or click Okay.

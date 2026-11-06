@@ -9,7 +9,10 @@ local STRIDE = 9
 local ROWS = 5
 local ICON = 36   -- SelectorButtonTemplate's size, Blizzard_SelectorUI.xml
 
--- macOS copies only with Cmd, so Ctrl there must not report a copy.
+-- Long enough for the client to finish the copy before the edit box goes away.
+local CLOSE_DELAY = 0.2
+
+-- macOS copies only with Cmd, so Ctrl there must not close the dialog or report a copy.
 local COPY_KEY = IsMacClient() and "Cmd" or "Ctrl"
 local copyModifier = IsMacClient() and IsMetaKeyDown or IsControlKeyDown
 
@@ -162,17 +165,23 @@ local function openIconDialog(index)
     box:SetFocus()
 end
 
--- The link box follows Player Armory Link's copy dialog: always the whole link, selected, and a copy is
--- confirmed in the error frame. It stays open, so Set Icon is one click away after the lookup.
+-- Player Armory Link's copy dialog: the whole link, always selected; one copy keypress copies it, closes the
+-- dialog and confirms in the error frame. Reads top to bottom: what it links to, what to do, the link, then
+-- where the icon ID is.
 local function buildLinkDialog()
-    linkDialog = UI.CreateDialog({ name = addonName .. "LinkDialog", title = TITLE, width = 480, parent = MacroFrame })
+    linkDialog = UI.CreateDialog({
+        name = addonName .. "LinkDialog", title = TITLE, width = 480, parent = MacroFrame,
+        position = { point = "CENTER", y = 140 },
+    })
     linkDialog:AddText("title", "Wowhead Icon Library")
     linkDialog:AddText("body", "Press " .. COPY_KEY .. "+C to copy the link, then paste it into your browser.", UI.Space.gap)
 
     linkBox = UI.CreateEditBox(linkDialog, linkDialog.contentWidth - UI.Native.inputArt)
     linkBox:SetScript("OnEscapePressed", function() linkDialog:Hide() end)
     linkBox:SetScript("OnEnterPressed", EditBox_HighlightText)
+    -- A click places the cursor and drops the selection, so the whole link is selected again.
     linkBox:SetScript("OnMouseUp", EditBox_HighlightText)
+    -- Reverts any edit so the link stays intact and fully selected.
     linkBox:SetScript("OnTextChanged", function(self, userInput)
         if userInput and self:GetText() ~= WOWHEAD_ICONS then
             self:SetText(WOWHEAD_ICONS)
@@ -180,30 +189,24 @@ local function buildLinkDialog()
         end
     end)
     linkBox:SetScript("OnKeyDown", function(self, key)
-        if key == "C" and copyModifier() then
-            -- Selects the whole link before the client copies, so the copy is never empty.
-            self:HighlightText()
+        if not (key == "C" and copyModifier()) then return end
+        -- Selects the whole link before the client copies, so the copy is never empty.
+        self:HighlightText()
+        C_Timer.After(CLOSE_DELAY, function()
+            linkDialog:Hide()
             UIErrorsFrame:AddMessage("Wowhead link copied to clipboard.", GREEN_FONT_COLOR:GetRGB())
-        end
+        end)
     end)
     linkDialog:AddField(linkBox, UI.Native.inputHeight, UI.Space.tight, UI.Native.inputArt)
 
-    linkDialog:AddSection("Find the Icon ID",
-        "Search the library and open an icon. Its ID is the number after icon= in the address, "
-        .. "such as 7808148 in wowhead.com/forever/icon=7808148.")
-    linkDialog:AddSection("Set the Icon",
-        "Click Set Icon, then type the ID or paste the whole icon link. "
-        .. "Later, right-click the macro and pick Set Icon.")
-
-    linkDialog:AddButton(CANCEL, function() linkDialog:Hide() end)
-    linkDialog:AddButton("Set Icon", function() openIconDialog(linkDialog.macroIndex) end)
+    linkDialog:AddText("muted", "Open an icon there. Its ID is the number after icon= in the address. "
+        .. "Then right-click the macro, pick Set Icon and type the ID or paste the address.", UI.Space.gap)
     linkDialog:Fit()
 end
 
-local function openLinkDialog(index)
+local function openLinkDialog()
     if not linkDialog then buildLinkDialog() end
     if dialog then dialog:Hide() end
-    linkDialog.macroIndex = index
     linkBox:SetText(WOWHEAD_ICONS)
     linkBox:SetCursorPosition(0)
     linkDialog:Show()
@@ -218,7 +221,7 @@ local function openMenu(button)
     MenuUtil.CreateContextMenu(button, function(_, root)
         root:CreateTitle(name)
         root:CreateButton("Set Icon", function() openIconDialog(index) end)
-        root:CreateButton("Copy Wowhead Icon Link", function() openLinkDialog(index) end)
+        root:CreateButton("Wowhead Link", openLinkDialog)
     end)
 end
 
