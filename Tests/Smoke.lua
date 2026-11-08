@@ -58,8 +58,29 @@ C_AddOns = { GetAddOnMetadata = function(name, key)
 end }
 NORMAL_FONT_COLOR = { WrapTextInColorCode = function(_, text) return "<gold>" .. text .. "</gold>" end }
 
+-- HelpTipTemplateMixin as far as the addon drives it (Blizzard_SharedXML/HelpTip.lua): Init keeps the info and
+-- any acknowledged mark, Reset clears both, and a hide closes the tip, which runs onAcknowledgeCallback only after
+-- an acknowledge.
+HelpTip = { width = 226, ButtonStyle = { Close = 2 }, Point = { RightEdgeCenter = 8 } }
+local function helpTip(f)
+    function f:Init(parent, info, relativeRegion)
+        self.parent, self.info, self.relativeRegion = parent, info, relativeRegion
+    end
+    function f:Reset() self.info, self.acknowledged = nil, false end
+    function f:Close()
+        local info = self.info
+        self.info, self.shown = nil, false
+        if info and self.acknowledged and info.onAcknowledgeCallback then info.onAcknowledgeCallback() end
+    end
+    function f:Acknowledge()
+        self.acknowledged = true
+        self:Close()
+    end
+    f.Hide = f.Close
+end
+
 -- Named frames by name, and the last frame made from each template the test drives.
-local named, box, grid, linkBox = {}, nil, nil, nil
+local named, box, grid, linkBox, tip = {}, nil, nil, nil, nil
 CreateFrame = function(_, name, parent, template)
     local f = newFrame(template)
     f.parent = parent
@@ -71,6 +92,9 @@ CreateFrame = function(_, name, parent, template)
         box = f
     elseif template == "InputBoxTemplate" then
         linkBox = f
+    elseif template == "HelpTipTemplate" then
+        helpTip(f)
+        tip = f
     elseif template == "ScrollBoxSelectorTemplate" then
         function f:SetSetupCallback(fn) self.setup = fn end
         function f:SetSelectedCallback(fn) self.selected = fn end
@@ -135,9 +159,21 @@ ScrollBoxListMixin = { Event = { OnAcquiredFrame = "OnAcquiredFrame" } }
 MacroFrame = {
     macroBase = 120,
     GetMacroDataIndex = function(self, index) return self.macroBase + index end,
-    MacroSelector = { ScrollBox = { RegisterCallback = function(_, _, fn, owner) callback = function(...) fn(owner, ...) end end } },
+    MacroSelector = newFrame("ScrollBoxSelectorTemplate"),
 }
-EventUtil = { ContinueOnAddOnLoaded = function(name, fn) assert(name == "Blizzard_MacroUI"); fn() end }
+MacroFrame.MacroSelector.ScrollBox = {
+    RegisterCallback = function(_, _, fn, owner) callback = function(...) fn(owner, ...) end end,
+}
+MacroPopupFrame = newFrame()
+-- Both the addon's own load and Blizzard_MacroUI's have happened by the time these run.
+EventUtil = { ContinueOnAddOnLoaded = function(name, fn)
+    assert(name == "EasyMacroIcons" or name == "Blizzard_MacroUI")
+    fn()
+end }
+
+-- The macro window opening and closing, as its macro list sees it.
+local function showMacroWindow() MacroFrame.MacroSelector.hooks.OnShow() end
+local function hideMacroWindow() if tip and tip.shown then tip:Close() end end
 
 local ns = {}
 assert(loadfile("Core.lua"))("EasyMacroIcons", ns)
@@ -148,6 +184,36 @@ local button = newFrame()
 button.GetElementData = function() return 1 end
 button.IsMouseOver = function() return true end
 callback(button, 1, true)
+
+-- The help tip shows beside the macro list each time the macro window opens, until it is closed or the menu used.
+assert(not tip, "a tip before the macro window opened")
+showMacroWindow()
+assert(tip and tip.shown and tip.parent == MacroFrame.MacroSelector and tip.width == HelpTip.width, "no tip at the list")
+assert(tip.info.text == "Right-click a macro here to set, copy or paste its icon.", "tip text")
+assert(tip.info.targetPoint == HelpTip.Point.RightEdgeCenter and tip.info.buttonStyle == HelpTip.ButtonStyle.Close,
+    "tip points left at the list from the right, with a close button")
+hideMacroWindow()
+assert(not tip.shown and not ns.db.tipSeen, "hiding with the window marked the tip seen")
+showMacroWindow()
+assert(tip.shown, "the tip did not come back")
+MacroPopupFrame.hooks.OnShow()
+assert(not tip.shown and not ns.db.tipSeen, "the tip did not make way for Change Name/Icon, or was marked seen")
+showMacroWindow()
+button.hooks.OnMouseUp(button, "RightButton")
+assert(not tip.shown and ns.db.tipSeen, "opening the menu did not retire the tip")
+showMacroWindow()
+assert(not tip.shown, "a retired tip came back")
+
+-- Brought back as /emi intro does, it is still not marked seen by a hide, only by its close button.
+ns.db.tipSeen = nil
+showMacroWindow()
+assert(tip.shown, "a cleared tip did not come back")
+hideMacroWindow()
+assert(not ns.db.tipSeen, "a tip brought back was marked seen by a hide")
+showMacroWindow()
+tip:Acknowledge()
+assert(not tip.shown and ns.db.tipSeen, "the close button did not retire the tip")
+menu = nil
 
 local function setIcon()
     menu = nil

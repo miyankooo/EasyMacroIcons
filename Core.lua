@@ -8,3 +8,9 @@ ns.title = C_AddOns.GetAddOnMetadata(addonName, "Title")
 function ns.Print(message)
     print(NORMAL_FONT_COLOR:WrapTextInColorCode("[" .. ns.title .. "]") .. ": " .. message)
 end
+
+-- The account's saved state: tipSeen once the macro list tip is closed or a macro's menu opened.
+EventUtil.ContinueOnAddOnLoaded(addonName, function()
+    EasyMacroIconsDB = EasyMacroIconsDB or {}
+    ns.db = EasyMacroIconsDB
+end)

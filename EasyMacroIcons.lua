@@ -389,6 +389,46 @@ local function openLinkDialog()
     linkBox:HighlightText()
 end
 
+-- The one help tip: Blizzard's yellow callout beside the macro list, pointing left at it from the right, the side
+-- with room, since the macro window opens at the left edge of the screen (UIPanelWindows area "left",
+-- Blizzard_MacroUI.lua:2). It is an own HelpTipTemplate frame, never HelpTip:Show, which takes a frame from
+-- Blizzard's shared pool and taints the help tips Blizzard shows later. Closing it or opening a macro's menu marks
+-- it seen for the account, and /emi intro clears that.
+local TIP_TEXT = "Right-click a macro here to set, copy or paste its icon."
+local tip
+
+local function AttachTip(target, text, targetPoint)
+    local info = {
+        text = text,
+        buttonStyle = HelpTip.ButtonStyle.Close,
+        targetPoint = targetPoint,
+        onAcknowledgeCallback = function() ns.db.tipSeen = true end,
+    }
+    target:HookScript("OnShow", function()
+        if ns.db.tipSeen then return end
+        if not tip then
+            tip = CreateFrame("Frame", nil, target, "HelpTipTemplate")
+            tip.width = HelpTip.width
+            tip:SetWidth(tip.width)
+        end
+        -- Init keeps the acknowledged mark an earlier close left on the frame, and the next hide would then mark
+        -- the tip seen. Reset clears it, as Blizzard's pool does before it reuses a tip (HelpTip.lua:143-148).
+        tip:Reset()
+        tip:Init(target, info, target)
+        tip:Show()
+    end)
+end
+
+-- Hides the tip without marking it seen, so it shows again the next time the macro window opens.
+local function hideTip()
+    if tip and tip:IsShown() then tip:Hide() end
+end
+
+-- Opening a macro's menu is the feature the tip points to, so it retires the tip, shown or not.
+local function tipUsed()
+    if tip and tip.info then tip:Acknowledge() else ns.db.tipSeen = true end
+end
+
 -- A menu entry's tooltip, through the menu's own SetTooltip: its label as the title, what it does, and for a
 -- disabled entry why, as an error line the way Blizzard's dungeon finder explains its disabled choices.
 local function setEntryTooltip(entry, title, text, reason)
@@ -404,6 +444,7 @@ local function openMenu(button)
     local name, icon = GetMacroInfo(index)
     if not name then return end
     icon = tonumber(icon)
+    tipUsed()
     MenuUtil.CreateContextMenu(button, function(_, root)
         root:CreateTitle(name)
         local set = root:CreateButton("Set Icon", function() openIconDialog(index) end)
@@ -443,4 +484,7 @@ end
 
 EventUtil.ContinueOnAddOnLoaded("Blizzard_MacroUI", function()
     MacroFrame.MacroSelector.ScrollBox:RegisterCallback(ScrollBoxListMixin.Event.OnAcquiredFrame, hookButton, ns)
+    AttachTip(MacroFrame.MacroSelector, TIP_TEXT, HelpTip.Point.RightEdgeCenter)
+    -- Blizzard's own icon picker (Change Name/Icon) opens where the tip stands, so the tip makes way for it.
+    MacroPopupFrame:HookScript("OnShow", hideTip)
 end)
