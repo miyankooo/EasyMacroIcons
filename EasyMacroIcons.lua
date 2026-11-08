@@ -1,13 +1,21 @@
 -- Right-click a macro in Blizzard's macro window for a menu: set its icon from a grid filtered by ID, copy and
 -- paste icons between macros, or copy the link to Wowhead's WoW Forever icon library to look an ID up.
 local addonName, ns = ...
-local UI = LibStub("LibNativeUI-1.0")
 
-local TITLE = "Easy Macro Icons"
 local WOWHEAD_ICONS = "https://www.wowhead.com/forever/icons"
 local STRIDE = 9
 local ROWS = 5
-local ICON = 36   -- SelectorButtonTemplate's size, Blizzard_SelectorUI.xml
+local ICON_BUTTON = 36   -- SelectorButtonTemplate's size, Blizzard_SelectorUI.xml
+
+-- Sizes on the design system's 4 px grid.
+local TIGHT = 4           -- label to control, hint under a field
+local GAP = 8             -- between related controls, heading to body
+local ICON = 16           -- inline icons
+local SCROLL_GUTTER = 24  -- right margin a scroll frame leaves for its bar
+
+-- InputBoxTemplate's art height and its left cap outside the box (Shared/InputBox/InputBoxTemplates.xml:47-49).
+local EDIT_BOX_HEIGHT = 20
+local EDIT_BOX_CAP = 5
 
 -- Long enough for the client to finish the copy before the edit box goes away.
 local CLOSE_DELAY = 0.2
@@ -21,6 +29,168 @@ local linkDialog, linkBox
 local macroIndex, picked
 local copiedIcon   -- Copy Icon keeps it for Paste Icon until /reload; the system clipboard is out of reach.
 local allIcons, shown = nil, {}
+
+-- Text in a font role: GameFontNormal (heading, gold), GameFontHighlight (body, white), GameFontDisable (muted,
+-- grey), GameFontNormalLarge (title, 16 px, a dialog's subject line only).
+local function CreateText(parent, fontObject, layer)
+    local text = parent:CreateFontString(nil, layer or "ARTWORK")
+    text:SetFontObject(fontObject or GameFontHighlight)
+    text:SetJustifyH("LEFT")
+    return text
+end
+
+-- A GameTooltip owned by the hovered frame, filled with Blizzard's GameTooltip_* line helpers. A frame whose
+-- template already sets OnEnter gets HookScript instead.
+local function AttachTooltip(frame, fill, anchor)
+    frame:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, anchor or "ANCHOR_RIGHT")
+        fill(GameTooltip, self)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", GameTooltip_Hide)
+end
+
+-- Rounds a length derived from text up to the 4 px grid.
+local function Snap(length)
+    return math.ceil(length / 4) * 4
+end
+
+-- A content button one row (24) tall. Without a width it fits its label the way UIPanelButtonTemplate's FitToText
+-- does (text plus 40, SecureUIPanelTemplates.xml:42), at least 64, rounded up to 8 so neighbours share widths.
+local function CreateButton(parent, label, width)
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetText(label)
+    width = width or math.max(64, math.ceil((button:GetTextWidth() + 40) / 8) * 8)
+    button:SetSize(width, 24)
+    return button
+end
+
+-- InputBoxTemplate draws its left cap 5 px outside the box (InputBoxTemplates.xml:49), so the caller indents the
+-- box by 5 to line the art up with the column.
+local function CreateEditBox(parent, width)
+    local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    box:SetSize(width or 160, 20)
+    box:SetAutoFocus(false)
+    box:SetFontObject(GameFontHighlight)
+    return box
+end
+
+-- SearchBoxTemplate types and hints in 10 px fonts; both move to the 12 px roles, the hint keeping its grey.
+local function CreateSearchBox(parent, width, name)
+    local box = CreateFrame("EditBox", name, parent, "SearchBoxTemplate")
+    box:SetSize(width or 160, 20)
+    box:SetAutoFocus(false)
+    box:SetFontObject(GameFontHighlight)
+    local r, g, b = box.Instructions:GetTextColor()
+    box.Instructions:SetFontObject(GameFontDisable)
+    box.Instructions:SetTextColor(r, g, b)
+    return box
+end
+
+-- Blizzard's own icon picker grid, as the macro book's icon picker: ScrollBoxSelectorTemplate with its
+-- SelectorButtonTemplate buttons. setup(button, index, icon) sets the icon and its tooltip.
+local function CreateIconGrid(parent, setup)
+    local grid = CreateFrame("Frame", nil, parent, "ScrollBoxSelectorTemplate")
+    grid:SetSetupCallback(setup)
+    return grid
+end
+
+-- Restores a saved position, or centres the frame.
+local function RestorePosition(frame, position)
+    frame:ClearAllPoints()
+    if position and position.point then
+        frame:SetPoint(position.point, UIParent, position.relPoint or position.point, position.x or 0, position.y or 0)
+    else
+        frame:SetPoint("CENTER")
+    end
+end
+
+-- Windows and dialogs: toplevel, clamped, dragged with the left button, closed by Escape through UISpecialFrames,
+-- never UIPanelWindows, so they never drive Blizzard's panel layout.
+local function MakeMovable(frame, name, strata, position)
+    frame:SetFrameStrata(strata)
+    frame:SetToplevel(true)
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        if position then
+            local point, _, relPoint, x, y = self:GetPoint(1)
+            position.point, position.relPoint, position.x, position.y = point, relPoint, x, y
+        end
+    end)
+    RestorePosition(frame, position)
+    frame:Hide()
+    tinsert(UISpecialFrames, name)
+end
+
+-- A dialog in Blizzard's dialog chrome: DialogBorderTemplate, DialogHeaderTemplate with the title and
+-- UIPanelCloseButton 2 px in from the corner (Blizzard_Channels/Mainline/CreateChannelPopup.xml:72). Width is a
+-- multiple of 8 from 400 to 480. Add content top to bottom with AddText and AddField, then call Fit.
+local DIALOG_SIDE, DIALOG_TOP, SECTION_GAP = 20, 40, 24
+local function CreateDialog(name, title, width, parent, position)
+    local dialog = CreateFrame("Frame", name, parent or UIParent)
+    dialog:SetSize(width, DIALOG_TOP + DIALOG_SIDE)
+    dialog.contentWidth = width - 2 * DIALOG_SIDE
+    dialog.contentHeight = 0
+    dialog.buttons = {}
+    dialog.Border = CreateFrame("Frame", nil, dialog, "DialogBorderTemplate")
+    dialog.Header = CreateFrame("Frame", nil, dialog, "DialogHeaderTemplate")
+    dialog.Header:Setup(title)
+    -- UIPanelCloseButton_OnClick goes through HideUIPanel, which refuses insecure callers in combat.
+    dialog.CloseButton = CreateFrame("Button", nil, dialog, "UIPanelCloseButton")
+    dialog.CloseButton:SetPoint("TOPRIGHT", -2, -2)
+    dialog.CloseButton:SetScript("OnClick", function() dialog:Hide() end)
+
+    -- Places a widget the caller sized in the content column below everything added so far; indent covers native
+    -- art, 5 for an edit box, 8 for a dropdown. The gap defaults to 8; AddText passes a section break.
+    function dialog:AddField(region, height, gap, indent)
+        if self.hasContent then self.contentHeight = self.contentHeight + (gap or 8) end
+        self.hasContent = true
+        region:SetPoint("TOPLEFT", self, "TOPLEFT", DIALOG_SIDE + (indent or 0), -(DIALOG_TOP + self.contentHeight))
+        self.contentHeight = self.contentHeight + height
+    end
+
+    -- Wrapped text across the column, never less than one line, so text filled in later keeps its line.
+    function dialog:AddText(fontObject, text, gap)
+        local line = CreateText(self, fontObject)
+        line:SetWidth(self.contentWidth)
+        line:SetWordWrap(true)
+        line:SetText(text or "")
+        local _, lineHeight = fontObject:GetFont()
+        local height = math.ceil(math.max(line:GetStringHeight(), lineHeight))
+        line:SetHeight(height)
+        self:AddField(line, height, gap or SECTION_GAP)
+        return line
+    end
+
+    -- A 24 px fit-to-text button in the bottom-right corner; later ones chain leftwards 8 apart.
+    function dialog:AddButton(label, onClick)
+        local button = CreateButton(self, label)
+        local previous = self.buttons[#self.buttons]
+        if previous then
+            button:SetPoint("RIGHT", previous, "LEFT", -8, 0)
+        else
+            button:SetPoint("BOTTOMRIGHT", -DIALOG_SIDE, DIALOG_SIDE)
+        end
+        button:SetScript("OnClick", onClick)
+        self.buttons[#self.buttons + 1] = button
+        return button
+    end
+
+    -- 40 top, the content, a section break and the button row if there are buttons, 20 bottom, on the grid.
+    function dialog:Fit()
+        local height = DIALOG_TOP + self.contentHeight + DIALOG_SIDE
+        if #self.buttons > 0 then height = height + SECTION_GAP + 24 end
+        self:SetHeight(Snap(height))
+    end
+
+    MakeMovable(dialog, name, "DIALOG", position)
+    return dialog
+end
 
 -- Every icon the macro window's picker offers, as file IDs in its order, each once. Loose icons come as
 -- file names without an ID (IconDataProvider.lua), so an ID search cannot match them and they are left out.
@@ -56,7 +226,7 @@ local function refreshSubject()
         dialog:Hide()
         return
     end
-    subject:SetText(CreateSimpleTextureMarkup(chosenIcon() or current, UI.Size.icon, UI.Size.icon) .. " " .. name)
+    subject:SetText(CreateSimpleTextureMarkup(chosenIcon() or current, ICON, ICON) .. " " .. name)
 end
 
 local function refreshGrid()
@@ -90,14 +260,14 @@ local function setIcon(index, id)
     local name = GetMacroInfo(index)
     if not (id and name) then return true end
     if InCombatLockdown() then
-        UI.Print(TITLE, "Macros change only out of combat.")
+        ns.Print("Macros change only out of combat.")
         return false
     end
     -- The name is passed again on purpose: Forever kept the old icon when it was nil.
     local newIndex = EditMacro(index, name, id)
     local _, icon = GetMacroInfo(newIndex or index)
     if icon ~= id then
-        UI.Print(TITLE, ("The game kept the old icon, so %d may not exist on this client."):format(id))
+        ns.Print(("The game kept the old icon, so %d may not exist on this client."):format(id))
     end
     return true
 end
@@ -108,10 +278,8 @@ local function apply()
     if setIcon(macroIndex, id) then dialog:Hide() end
 end
 
-local function showIconTooltip(button)
-    UI.ShowTooltip(button, function(tooltip)
-        GameTooltip_SetTitle(tooltip, ("Icon ID %d"):format(button.iconID))
-    end)
+local function fillIconTooltip(tooltip, button)
+    GameTooltip_SetTitle(tooltip, ("Icon ID %d"):format(button.iconID))
 end
 
 -- The grid is Blizzard's own icon picker grid, ScrollBoxSelectorTemplate with SelectorButtonTemplate.
@@ -120,36 +288,34 @@ local function setupButton(button, _, icon)
     button.iconID = icon
     if not button.hasTooltip then
         button.hasTooltip = true
-        button:SetScript("OnEnter", showIconTooltip)
-        button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        AttachTooltip(button, fillIconTooltip)
     end
 end
 
 local function buildIconDialog()
-    dialog = UI.CreateDialog({ name = addonName .. "Dialog", title = TITLE, width = 480, parent = MacroFrame })
-    subject = dialog:AddText("title", "")
-    dialog:AddText("body", "Icon ID", UI.Space.tight)
+    dialog = CreateDialog(addonName .. "Dialog", ns.title, 480, MacroFrame)
+    subject = dialog:AddText(GameFontNormalLarge, "")
+    dialog:AddText(GameFontHighlight, "Icon ID", TIGHT)
 
-    box = UI.CreateSearchBox(dialog, dialog.contentWidth - UI.Native.inputArt, addonName .. "SearchBox")
+    box = CreateSearchBox(dialog, dialog.contentWidth - EDIT_BOX_CAP, addonName .. "SearchBox")
     box.Instructions:SetText("Icon ID or Wowhead icon link")
     box:SetMaxLetters(256)
-    dialog:AddField(box, UI.Native.inputHeight, UI.Space.tight, UI.Native.inputArt)
+    dialog:AddField(box, EDIT_BOX_HEIGHT, TIGHT, EDIT_BOX_CAP)
 
-    local padding, spacing = UI.Space.tight, UI.Space.gap
-    grid = CreateFrame("Frame", nil, dialog, "ScrollBoxSelectorTemplate")
+    local padding, spacing = TIGHT, GAP
+    grid = CreateIconGrid(dialog, setupButton)
     -- Wide enough for STRIDE buttons plus the template's scroll bar, so no row gap is wasted.
-    grid:SetSize(STRIDE * ICON + (STRIDE - 1) * spacing + 2 * padding + UI.ScrollGutter(),
-        ROWS * ICON + (ROWS - 1) * spacing + 2 * padding)
+    grid:SetSize(STRIDE * ICON_BUTTON + (STRIDE - 1) * spacing + 2 * padding + SCROLL_GUTTER,
+        ROWS * ICON_BUTTON + (ROWS - 1) * spacing + 2 * padding)
     grid:SetCustomStride(STRIDE)
     grid:SetCustomPadding(padding, padding, padding, padding, spacing, spacing)
-    grid:SetSetupCallback(setupButton)
     grid:SetSelectedCallback(function(_, icon)
         picked = icon
         refreshSubject()
     end)
-    dialog:AddField(grid, grid:GetHeight(), UI.Space.gap)
+    dialog:AddField(grid, grid:GetHeight(), GAP)
 
-    hint = dialog:AddText("muted", "", UI.Space.tight)
+    hint = dialog:AddText(GameFontDisable, "", TIGHT)
     dialog:AddButton(CANCEL, function() dialog:Hide() end)
     dialog:AddButton(OKAY, apply)
     dialog:Fit()
@@ -180,14 +346,11 @@ end
 -- dialog and confirms in the error frame. Reads top to bottom: what it links to, what to do, the link, then
 -- where the icon ID is.
 local function buildLinkDialog()
-    linkDialog = UI.CreateDialog({
-        name = addonName .. "LinkDialog", title = TITLE, width = 480, parent = MacroFrame,
-        position = { point = "CENTER", y = 140 },
-    })
-    linkDialog:AddText("title", "Wowhead Icon Library")
-    linkDialog:AddText("body", "Press " .. COPY_KEY .. "+C to copy the link, then paste it into your browser.", UI.Space.gap)
+    linkDialog = CreateDialog(addonName .. "LinkDialog", ns.title, 480, MacroFrame, { point = "CENTER", y = 140 })
+    linkDialog:AddText(GameFontNormalLarge, "Wowhead Icon Library")
+    linkDialog:AddText(GameFontHighlight, "Press " .. COPY_KEY .. "+C to copy the link, then paste it into your browser.", GAP)
 
-    linkBox = UI.CreateEditBox(linkDialog, linkDialog.contentWidth - UI.Native.inputArt)
+    linkBox = CreateEditBox(linkDialog, linkDialog.contentWidth - EDIT_BOX_CAP)
     linkBox:SetScript("OnEscapePressed", function() linkDialog:Hide() end)
     linkBox:SetScript("OnEnterPressed", EditBox_HighlightText)
     -- A click places the cursor and drops the selection, so the whole link is selected again.
@@ -208,10 +371,10 @@ local function buildLinkDialog()
             UIErrorsFrame:AddMessage("Wowhead link copied to clipboard.", GREEN_FONT_COLOR:GetRGB())
         end)
     end)
-    linkDialog:AddField(linkBox, UI.Native.inputHeight, UI.Space.tight, UI.Native.inputArt)
+    linkDialog:AddField(linkBox, EDIT_BOX_HEIGHT, TIGHT, EDIT_BOX_CAP)
 
-    linkDialog:AddText("muted", "Open an icon there. Its ID is the number after icon= in the address. "
-        .. "Then right-click the macro, pick Set Icon and type the ID or paste the address.", UI.Space.gap)
+    linkDialog:AddText(GameFontDisable, "Open an icon there. Its ID is the number after icon= in the address. "
+        .. "Then right-click the macro, pick Set Icon and type the ID or paste the address.", GAP)
     linkDialog:Fit()
 end
 
@@ -240,7 +403,7 @@ local function openMenu(button)
         copy:SetEnabled(icon ~= nil)
         -- The entry shows the copied icon and its ID, so it is clear what a paste sets.
         local pasteLabel = copiedIcon
-            and ("Paste Icon %s %d"):format(CreateSimpleTextureMarkup(copiedIcon, UI.Size.icon, UI.Size.icon), copiedIcon)
+            and ("Paste Icon %s %d"):format(CreateSimpleTextureMarkup(copiedIcon, ICON, ICON), copiedIcon)
             or "Paste Icon"
         local paste = root:CreateButton(pasteLabel, function() setIcon(index, copiedIcon) end)
         paste:SetEnabled(copiedIcon ~= nil and copiedIcon ~= icon)

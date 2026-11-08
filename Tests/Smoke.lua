@@ -1,12 +1,18 @@
 -- Offline smoke test: lua Tests/Smoke.lua from the repo root.
--- Stubs the client and LibNativeUI, loads the addon, right-clicks a macro button, filters and sets an icon.
+-- Stubs the client and the Blizzard templates the dialogs are built from, loads the addon, right-clicks a macro
+-- button, filters and sets an icon.
 
+local realPrint = print
 local printed, edits = {}, {}
+print = function(line) printed[#printed + 1] = line end
 local macros = { [121] = { "COOK", 134400, "#showtooltip" } }
 local accepts = true
 
-local function newFrame()
-    local f = { scripts = {}, hooks = {}, text = "", shown = false }
+local function noop() end
+
+-- A frame or font string with the widget methods the addon and its recipes call.
+local function newFrame(template)
+    local f = { scripts = {}, hooks = {}, text = "", shown = false, template = template }
     function f:SetScript(k, fn) self.scripts[k] = fn end
     function f:HookScript(k, fn) self.hooks[k] = fn end
     function f:SetText(t)
@@ -16,53 +22,71 @@ local function newFrame()
     function f:GetText() return self.text end
     function f:Show() self.shown = true end
     function f:Hide() self.shown = false end
+    function f:IsShown() return self.shown end
+    function f:SetHeight(h) self.height = h end
     function f:GetHeight() return self.height end
+    function f:SetWidth(w) self.width = w end
+    function f:SetSize(w, h) self.width, self.height = w, h end
     function f:ClearAllPoints() self.point = nil end
     function f:SetPoint(...) self.point = { ... } end
-    function f:SetSize(w, h) self.width, self.height = w, h end
-    for _, k in ipairs({ "SetNumeric", "SetMaxLetters", "SetFocus", "SetCustomStride", "SetCustomPadding" }) do
-        f[k] = function() end
+    function f:GetPoint() return table.unpack(self.point) end
+    function f:GetTextWidth() return 7 * #self.text end
+    function f:GetStringHeight() return 0 end
+    function f:GetTextColor() return 0.35, 0.35, 0.35 end
+    function f:CreateFontString() return newFrame() end
+    for _, k in ipairs({ "SetFontObject", "SetJustifyH", "SetWordWrap", "SetTextColor", "SetAutoFocus",
+        "SetMaxLetters", "SetFocus", "SetCursorPosition", "HighlightText", "SetFrameStrata", "SetToplevel",
+        "SetClampedToScreen", "SetMovable", "EnableMouse", "RegisterForDrag", "StartMoving", "StopMovingOrSizing",
+        "SetCustomStride", "SetCustomPadding" }) do
+        f[k] = noop
     end
     return f
 end
 
-local function newDialog()
-    local d = newFrame()
-    d.buttons, d.contentWidth = {}, 440
-    function d:AddText() return newFrame() end
-    function d:AddSection() return newFrame(), newFrame() end
-    function d:AddField() end
-    function d:AddButton(label, fn) self.buttons[label] = fn end
-    function d:Fit() end
-    return d
-end
-local dialogs = {}
+local function newFont(size) return { GetFont = function() return "Fonts\\FRIZQT__.TTF", size end } end
+GameFontNormalLarge, GameFontHighlight, GameFontDisable = newFont(16), newFont(12), newFont(12)
+UIParent, UISpecialFrames, tinsert = newFrame(), {}, table.insert
+GameTooltip = newFrame()
+function GameTooltip:SetOwner(owner) self.owner = owner end
+GameTooltip_SetTitle = function(tooltip, text) tooltip.title = text end
+GameTooltip_Hide = noop
+C_AddOns = { GetAddOnMetadata = function(name, key)
+    assert(name == "EasyMacroIcons" and key == "Title")
+    return "Easy Macro Icons"
+end }
+NORMAL_FONT_COLOR = { WrapTextInColorCode = function(_, text) return "<gold>" .. text .. "</gold>" end }
 
-local box, grid, linkBox
-LibStub = function()
-    return {
-        Size = { icon = 16, input = 160 }, Space = { tight = 4, gap = 8 }, Native = { inputHeight = 20, inputArt = 5 },
-        ScrollGutter = function() return 24 end,
-        Print = function(_, msg) printed[#printed + 1] = msg end,
-        ShowTooltip = function() end,
-        CreateDialog = function(spec) local d = newDialog(); dialogs[spec.name] = d; return d end,
-        CreateSearchBox = function() box = newFrame(); box.Instructions = newFrame(); return box end,
-        CreateEditBox = function()
-            linkBox = newFrame()
-            linkBox.SetCursorPosition, linkBox.HighlightText = function() end, function() end
-            return linkBox
-        end,
-    }
+-- Named frames by name, and the last frame made from each template the test drives.
+local named, box, grid, linkBox = {}, nil, nil, nil
+CreateFrame = function(_, name, parent, template)
+    local f = newFrame(template)
+    f.parent = parent
+    if name then named[name] = f end
+    if template == "DialogHeaderTemplate" then
+        function f:Setup(title) self.title = title end
+    elseif template == "SearchBoxTemplate" then
+        f.Instructions = newFrame()
+        box = f
+    elseif template == "InputBoxTemplate" then
+        linkBox = f
+    elseif template == "ScrollBoxSelectorTemplate" then
+        function f:SetSetupCallback(fn) self.setup = fn end
+        function f:SetSelectedCallback(fn) self.selected = fn end
+        function f:SetSelectionsArray(a) self.items = a end
+        function f:SetSelectedIndex(i) self.index = i end
+        grid = f
+    end
+    return f
 end
-CreateFrame = function(_, _, _, template)
-    assert(template == "ScrollBoxSelectorTemplate")
-    grid = newFrame()
-    function grid:SetSetupCallback(fn) self.setup = fn end
-    function grid:SetSelectedCallback(fn) self.selected = fn end
-    function grid:SetSelectionsArray(a) self.items = a end
-    function grid:SetSelectedIndex(i) self.index = i end
-    return grid
+
+-- Clicks the dialog's button with this label.
+local function click(dialog, label)
+    for _, button in ipairs(dialog.buttons) do
+        if button.text == label then return button.scripts.OnClick(button) end
+    end
+    error("no " .. label .. " button")
 end
+
 OKAY, CANCEL = "Okay", "Cancel"
 IsMacClient = function() return true end
 IsMetaKeyDown = function() return true end
@@ -106,7 +130,9 @@ MacroFrame = {
 }
 EventUtil = { ContinueOnAddOnLoaded = function(name, fn) assert(name == "Blizzard_MacroUI"); fn() end }
 
-assert(loadfile("EasyMacroIcons.lua"))("EasyMacroIcons", {})
+local ns = {}
+assert(loadfile("Core.lua"))("EasyMacroIcons", ns)
+assert(loadfile("EasyMacroIcons.lua"))("EasyMacroIcons", ns)
 assert(callback, "no acquire callback")
 
 local button = newFrame()
@@ -124,8 +150,17 @@ button.hooks.OnMouseUp(button, "LeftButton")
 assert(not menu, "left click opened the menu")
 setIcon()
 assert(menu.title == "COOK" and menu.items["Wowhead Link"], "menu entries")
-local dialog = dialogs.EasyMacroIconsDialog
+local dialog = named.EasyMacroIconsDialog
 assert(dialog.shown, "Set Icon did not open the dialog")
+assert(dialog.parent == MacroFrame and dialog.Header.title == "Easy Macro Icons", "dialog chrome")
+assert(UISpecialFrames[1] == "EasyMacroIconsDialog", "Escape does not close the dialog")
+assert(box.width == 435 and box.point[4] == 25, "search box not indented by its 5 px cap")
+assert(grid.width == 420 and grid.height == 220, "grid size changed: " .. grid.width .. " x " .. grid.height)
+local iconButton = newFrame("SelectorButtonTemplate")
+iconButton.SetIconTexture = noop
+grid.setup(iconButton, 1, 7808148)
+iconButton.scripts.OnEnter(iconButton)
+assert(GameTooltip.owner == iconButton and GameTooltip.title == "Icon ID 7808148", "icon tooltip")
 assert(dialog.point and dialog.point[1] == "TOPLEFT" and dialog.point[2] == MacroFrame and dialog.point[3] == "TOPRIGHT",
     "Set Icon dialog not beside the macro window")
 assert(#grid.items == 4, "icons not loaded once each without loose names: " .. #grid.items)
@@ -144,14 +179,16 @@ setIcon()
 assert(#grid.items == 4, "reopening did not reset the filter")
 box:SetText("99999")
 assert(#grid.items == 0)
-dialog.buttons.Okay()
-assert(edits[2][3] == 99999 and #printed == 1 and printed[1]:find("kept the old icon"), "no warning for a refused icon")
+click(dialog, OKAY)
+assert(edits[2][3] == 99999 and #printed == 1, "no warning for a refused icon")
+assert(printed[1] == "<gold>[Easy Macro Icons]</gold>: The game kept the old icon, so 99999 may not exist on this client.",
+    "chat line not in the shared format: " .. printed[1])
 
 -- Typing after a pick drops the pick.
 setIcon()
 grid.selected(1, 134400)
 box:SetText("1339")
-dialog.buttons.Okay()
+click(dialog, OKAY)
 assert(edits[3][3] == 1339, "a stale grid pick was applied")
 
 -- A pasted Wowhead icon link filters by and applies its ID; other text matches nothing.
@@ -159,19 +196,19 @@ accepts = true
 setIcon()
 box:SetText("https://www.wowhead.com/forever/icon=7808148/inv-camelot-camping-welcomingcampfire")
 assert(#grid.items == 1 and grid.items[1] == 7808148, "pasted link did not filter")
-dialog.buttons.Okay()
+click(dialog, OKAY)
 assert(edits[4][3] == 7808148, "pasted link did not apply")
 setIcon()
 box:SetText("fish")
 assert(#grid.items == 0)
-dialog.buttons.Okay()
+click(dialog, OKAY)
 assert(#edits == 4, "text without an ID applied")
 dialog:Hide()
 
 -- The link dialog keeps its link, and one copy keypress confirms and closes it, as in Player Armory Link.
 button.hooks.OnMouseUp(button, "RightButton")
 menu.items["Wowhead Link"]()
-local linkDialog = dialogs.EasyMacroIconsLinkDialog
+local linkDialog = named.EasyMacroIconsLinkDialog
 assert(linkDialog.shown and linkBox:GetText() == "https://www.wowhead.com/forever/icons")
 linkBox.text = "x"
 linkBox.scripts.OnTextChanged(linkBox, true)
@@ -206,4 +243,4 @@ menu = nil
 button.hooks.OnMouseUp(button, "RightButton")
 assert(not menu, "an empty slot opened the menu")
 
-print("Smoke: all checks passed.")
+realPrint("Smoke: all checks passed.")
