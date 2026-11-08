@@ -48,7 +48,9 @@ GameFontNormalLarge, GameFontHighlight, GameFontDisable = newFont(16), newFont(1
 UIParent, UISpecialFrames, tinsert = newFrame(), {}, table.insert
 GameTooltip = newFrame()
 function GameTooltip:SetOwner(owner) self.owner = owner end
-GameTooltip_SetTitle = function(tooltip, text) tooltip.title = text end
+GameTooltip_SetTitle = function(tooltip, text) tooltip.title, tooltip.lines = text, {} end
+GameTooltip_AddNormalLine = function(tooltip, text) tooltip.lines[#tooltip.lines + 1] = text end
+GameTooltip_AddErrorLine = function(tooltip, text) tooltip.lines[#tooltip.lines + 1] = "<red>" .. text end
 GameTooltip_Hide = noop
 C_AddOns = { GetAddOnMetadata = function(name, key)
     assert(name == "EasyMacroIcons" and key == "Title")
@@ -101,14 +103,17 @@ UIErrorsFrame = {
 }
 local menu
 MenuUtil = { CreateContextMenu = function(owner, gen)
-    menu = { title = nil, items = {}, enabled = {} }
+    menu = { title = nil, items = {}, enabled = {}, tooltips = {} }
     local root = {}
     function root:CreateTitle(t) menu.title = t end
     function root:CreateButton(label, fn)
         local key = label:match("^Paste Icon") and "Paste Icon" or label
         menu.items[key], menu.enabled[key], menu.labels = fn, true, menu.labels or {}
         menu.labels[key] = label
-        return { SetEnabled = function(_, on) menu.enabled[key] = on end }
+        return {
+            SetEnabled = function(_, on) menu.enabled[key] = on end,
+            SetTooltip = function(_, fill) menu.tooltips[key] = fill end,
+        }
     end
     gen(owner, root)
 end }
@@ -241,11 +246,25 @@ button2.IsMouseOver = function() return true end
 callback(button2, 2, true)
 button.hooks.OnMouseUp(button, "RightButton")
 assert(menu.enabled["Paste Icon"] == false, "Paste Icon enabled before a copy")
+
+-- Every menu entry explains itself, and a disabled one says why in red.
+local function tooltipOf(key)
+    local tooltip = {}
+    menu.tooltips[key](tooltip)
+    return tooltip
+end
+for _, key in ipairs({ "Set Icon", "Copy Icon", "Paste Icon", "Wowhead Link" }) do
+    local tooltip = tooltipOf(key)
+    assert(tooltip.title == key and tooltip.lines[1]:match("%.$"), "no tooltip on " .. key)
+end
+assert(#tooltipOf("Copy Icon").lines == 1, "an enabled entry shows an error line")
+assert(tooltipOf("Paste Icon").lines[2] == "<red>Copy an icon from a macro first.", "disabled Paste Icon")
 local before = copied
 menu.items["Copy Icon"]()
 assert(copied == before + 1, "copy not confirmed")
 button.hooks.OnMouseUp(button, "RightButton")
 assert(menu.enabled["Paste Icon"] == false, "Paste Icon enabled on the macro that already has the icon")
+assert(tooltipOf("Paste Icon").lines[2] == "<red>This macro already has that icon.", "Paste Icon on the same icon")
 button2.hooks.OnMouseUp(button2, "RightButton")
 assert(menu.enabled["Paste Icon"] and menu.labels["Paste Icon"]:find("7808148"), "Paste Icon missing its icon")
 local n = #edits

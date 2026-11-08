@@ -389,6 +389,16 @@ local function openLinkDialog()
     linkBox:HighlightText()
 end
 
+-- A menu entry's tooltip, through the menu's own SetTooltip: its label as the title, what it does, and for a
+-- disabled entry why, as an error line the way Blizzard's dungeon finder explains its disabled choices.
+local function setEntryTooltip(entry, title, text, reason)
+    entry:SetTooltip(function(tooltip)
+        GameTooltip_SetTitle(tooltip, title)
+        GameTooltip_AddNormalLine(tooltip, text)
+        if reason then GameTooltip_AddErrorLine(tooltip, reason) end
+    end)
+end
+
 local function openMenu(button)
     local index = MacroFrame:GetMacroDataIndex(button:GetElementData())
     local name, icon = GetMacroInfo(index)
@@ -396,19 +406,28 @@ local function openMenu(button)
     icon = tonumber(icon)
     MenuUtil.CreateContextMenu(button, function(_, root)
         root:CreateTitle(name)
-        root:CreateButton("Set Icon", function() openIconDialog(index) end)
+        local set = root:CreateButton("Set Icon", function() openIconDialog(index) end)
+        setEntryTooltip(set, "Set Icon", "Sets this macro's icon by icon ID. Type part of an ID to filter the "
+            .. "macro window's icons, or paste any ID or a Wowhead icon link.")
         local copy = root:CreateButton("Copy Icon", function()
             copiedIcon = icon
             UIErrorsFrame:AddMessage(("Icon %d copied."):format(icon), GREEN_FONT_COLOR:GetRGB())
         end)
         copy:SetEnabled(icon ~= nil)
+        setEntryTooltip(copy, "Copy Icon", "Keeps this macro's icon for Paste Icon on another macro.",
+            not icon and "This macro's icon has no icon ID." or nil)
         -- The entry shows the copied icon and its ID, so it is clear what a paste sets.
         local pasteLabel = copiedIcon
             and ("Paste Icon %s %d"):format(CreateSimpleTextureMarkup(copiedIcon, ICON, ICON), copiedIcon)
             or "Paste Icon"
         local paste = root:CreateButton(pasteLabel, function() setIcon(index, copiedIcon) end)
         paste:SetEnabled(copiedIcon ~= nil and copiedIcon ~= icon)
-        root:CreateButton("Wowhead Link", openLinkDialog)
+        setEntryTooltip(paste, "Paste Icon", "Gives this macro the icon you copied with Copy Icon.",
+            not copiedIcon and "Copy an icon from a macro first."
+            or copiedIcon == icon and "This macro already has that icon." or nil)
+        local link = root:CreateButton("Wowhead Link", openLinkDialog)
+        setEntryTooltip(link, "Wowhead Link", "Shows the link to Wowhead's WoW Forever icon library, "
+            .. "to look up an icon's ID.")
     end)
 end
 
