@@ -165,11 +165,16 @@ MacroFrame.MacroSelector.ScrollBox = {
     RegisterCallback = function(_, _, fn, owner) callback = function(...) fn(owner, ...) end end,
 }
 MacroPopupFrame = newFrame()
--- Both the addon's own load and Blizzard_MacroUI's have happened by the time these run.
-EventUtil = { ContinueOnAddOnLoaded = function(name, fn)
-    assert(name == "EasyMacroIcons" or name == "Blizzard_MacroUI")
-    fn()
-end }
+-- Both the addon's own load and Blizzard_MacroUI's have happened by the time these run. Login is Welcome.lua's.
+EventUtil = {
+    ContinueOnAddOnLoaded = function(name, fn)
+        assert(name == "EasyMacroIcons" or name == "Blizzard_MacroUI")
+        fn()
+    end,
+    ContinueOnPlayerLogin = noop,
+}
+SlashCmdList = {}
+strtrim = function(text) return (text:gsub("^%s+", ""):gsub("%s+$", "")) end
 
 -- The macro window opening and closing, as its macro list sees it.
 local function showMacroWindow() MacroFrame.MacroSelector.hooks.OnShow() end
@@ -188,7 +193,8 @@ callback(button, 1, true)
 -- The help tip shows beside the macro list each time the macro window opens, until it is closed or the menu used.
 assert(not tip, "a tip before the macro window opened")
 showMacroWindow()
-assert(tip and tip.shown and tip.parent == MacroFrame.MacroSelector and tip.width == HelpTip.width, "no tip at the list")
+assert(tip and tip.shown and tip.parent == MacroFrame.MacroSelector and tip.width == HelpTip.width,
+    "no tip at the list")
 assert(tip.info.text == "Right-click a macro here to set, copy or paste its icon.", "tip text")
 assert(tip.info.targetPoint == HelpTip.Point.RightEdgeCenter and tip.info.buttonStyle == HelpTip.ButtonStyle.Close,
     "tip points left at the list from the right, with a close button")
@@ -204,8 +210,10 @@ assert(not tip.shown and ns.db.tipSeen, "opening the menu did not retire the tip
 showMacroWindow()
 assert(not tip.shown, "a retired tip came back")
 
--- Brought back as /emi intro does, it is still not marked seen by a hide, only by its close button.
-ns.db.tipSeen = nil
+-- Brought back by /emi intro, it is still not marked seen by a hide, only by its close button.
+SlashCmdList.EASYMACROICONS("intro")
+assert(#printed == 1 and printed[1]:find("Type /emi help", 1, true), "intro did not print the welcome line")
+printed[1] = nil
 showMacroWindow()
 assert(tip.shown, "a cleared tip did not come back")
 hideMacroWindow()
@@ -256,7 +264,8 @@ box:SetText("99999")
 assert(#grid.items == 0)
 click(dialog, OKAY)
 assert(edits[2][3] == 99999 and #printed == 1, "no warning for a refused icon")
-assert(printed[1] == "<gold>[Easy Macro Icons]</gold>: The game kept the old icon, so 99999 may not exist on this client.",
+assert(printed[1]
+    == "<gold>[Easy Macro Icons]</gold>: The game kept the old icon, so 99999 may not exist on this client.",
     "chat line not in the shared format: " .. printed[1])
 
 -- Typing after a pick drops the pick.
