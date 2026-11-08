@@ -23,6 +23,7 @@ local function newFrame(template)
     function f:Show() self.shown = true end
     function f:Hide() self.shown = false end
     function f:IsShown() return self.shown end
+    function f:IsVisible() return self.visible or false end
     function f:SetHeight(h) self.height = h end
     function f:GetHeight() return self.height end
     function f:SetWidth(w) self.width = w end
@@ -177,9 +178,18 @@ SlashCmdList = {}
 strtrim = function(text) return (text:gsub("^%s+", ""):gsub("%s+$", "")) end
 
 -- The macro window opening and closing, as its macro list sees it.
-local function showMacroWindow() MacroFrame.MacroSelector.hooks.OnShow() end
-local function hideMacroWindow() if tip and tip.shown then tip:Close() end end
+local list = MacroFrame.MacroSelector
+local function showMacroWindow()
+    list.visible = true
+    list.hooks.OnShow()
+end
+local function hideMacroWindow()
+    list.visible = false
+    if tip and tip.shown then tip:Close() end
+end
 
+-- The macro window is already open when the addon attaches its tip, so no OnShow comes.
+list.visible = true
 local ns = {}
 assert(loadfile("Core.lua"))("EasyMacroIcons", ns)
 assert(loadfile("EasyMacroIcons.lua"))("EasyMacroIcons", ns)
@@ -191,8 +201,7 @@ button.IsMouseOver = function() return true end
 callback(button, 1, true)
 
 -- The help tip shows beside the macro list each time the macro window opens, until it is closed or the menu used.
-assert(not tip, "a tip before the macro window opened")
-showMacroWindow()
+-- Attached while the window is open, it shows at once.
 assert(tip and tip.shown and tip.parent == MacroFrame.MacroSelector and tip.width == HelpTip.width,
     "no tip at the list")
 assert(tip.info.text == "Right-click a macro here to set, copy or paste its icon.", "tip text")
@@ -210,15 +219,20 @@ assert(not tip.shown and ns.db.tipSeen, "opening the menu did not retire the tip
 showMacroWindow()
 assert(not tip.shown, "a retired tip came back")
 
--- Brought back by /emi intro, it is still not marked seen by a hide, only by its close button.
+-- /emi intro brings it back at once while the macro window is open, and a hide still does not mark it seen.
 SlashCmdList.EASYMACROICONS("intro")
 assert(#printed == 1 and printed[1]:find("Type /emi help", 1, true), "intro did not print the welcome line")
 printed[1] = nil
+assert(tip.shown, "intro did not bring the tip back at once")
+hideMacroWindow()
+assert(not tip.shown and not ns.db.tipSeen, "a tip brought back was marked seen by a hide")
+
+-- With the window closed, intro waits for its next open; only the close button retires the tip.
+SlashCmdList.EASYMACROICONS("intro")
+printed[1] = nil
+assert(not tip.shown, "intro showed the tip with the window closed")
 showMacroWindow()
 assert(tip.shown, "a cleared tip did not come back")
-hideMacroWindow()
-assert(not ns.db.tipSeen, "a tip brought back was marked seen by a hide")
-showMacroWindow()
 tip:Acknowledge()
 assert(not tip.shown and ns.db.tipSeen, "the close button did not retire the tip")
 menu = nil

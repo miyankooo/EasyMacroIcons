@@ -12,7 +12,7 @@ end
 -- The addon has no window or settings page, so the welcome line carries no link: it says what the addon does and
 -- where to start.
 local WELCOME = "Sets any macro's icon by icon ID, even icons the macro window does not list. Open the macro window "
-    .. "with /macro and right-click a macro to set, copy or paste its icon. Type /emi help for every command."
+    .. "with /macro and right-click a macro to set, copy or paste its icon. Type /emi help for the commands."
 
 local HELP = "Right-click a macro in the macro window to set, copy or paste its icon. Type /emi intro to see the "
     .. "welcome line and the tip again, or /emi help for this list."
@@ -30,10 +30,12 @@ EventUtil.ContinueOnPlayerLogin(function()
     if ns.firstRun then ns.Print(WELCOME) end
 end)
 
--- /emi intro: the welcome line now, and the macro list tip again the next time the macro window opens.
+-- /emi intro: the welcome line now, and the macro list tip again, at once while the macro window is open or the
+-- next time it opens.
 function ns.ReplayIntro()
     ns.db.tipSeen = nil
     ns.Print(WELCOME)
+    if ns.ShowTip then ns.ShowTip() end
 end
 
 -- One long command and one short alias. Without a window or settings page to open, the bare command prints the

@@ -26,7 +26,7 @@ EventUtil = {
 local PREFIX = "<gold>[Easy Macro Icons]</gold>: "
 local WELCOME = PREFIX .. "Sets any macro's icon by icon ID, even icons the macro window does not list. Open the "
     .. "macro window with /macro and right-click a macro to set, copy or paste its icon. "
-    .. "Type /emi help for every command."
+    .. "Type /emi help for the commands."
 local HELP = PREFIX .. "Right-click a macro in the macro window to set, copy or paste its icon. Type /emi intro to "
     .. "see the welcome line and the tip again, or /emi help for this list."
 

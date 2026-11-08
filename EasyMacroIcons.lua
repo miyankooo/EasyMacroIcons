@@ -395,38 +395,41 @@ end
 -- Blizzard's shared pool and taints the help tips Blizzard shows later. Closing it or opening a macro's menu marks
 -- it seen for the account, and /emi intro clears that.
 local TIP_TEXT = "Right-click a macro here to set, copy or paste its icon."
-local tip
+local retireTip
 
-local function AttachTip(target, text, targetPoint)
+-- The skill's recipe, plus a third return that hides the tip without marking it seen, for Blizzard's own icon
+-- picker, which opens where the tip stands.
+local function AttachTip(target, text, targetPoint, relativeRegion)
+    local tip
     local info = {
         text = text,
         buttonStyle = HelpTip.ButtonStyle.Close,
         targetPoint = targetPoint,
         onAcknowledgeCallback = function() ns.db.tipSeen = true end,
     }
-    target:HookScript("OnShow", function()
-        if ns.db.tipSeen then return end
+    local function ShowTip()
+        if ns.db.tipSeen or (tip and tip:IsShown()) then return end
         if not tip then
             tip = CreateFrame("Frame", nil, target, "HelpTipTemplate")
             tip.width = HelpTip.width
             tip:SetWidth(tip.width)
         end
-        -- Init keeps the acknowledged mark an earlier close left on the frame, and the next hide would then mark
-        -- the tip seen. Reset clears it, as Blizzard's pool does before it reuses a tip (HelpTip.lua:143-148).
         tip:Reset()
-        tip:Init(target, info, target)
+        tip:Init(target, info, relativeRegion or target)
         tip:Show()
-    end)
-end
+    end
+    target:HookScript("OnShow", ShowTip)
+    if target:IsVisible() then ShowTip() end
 
--- Hides the tip without marking it seen, so it shows again the next time the macro window opens.
-local function hideTip()
-    if tip and tip:IsShown() then tip:Hide() end
-end
+    -- The player used the feature: the tip goes for good, shown or not.
+    local function Retire()
+        if tip and tip.info then tip:Acknowledge() else ns.db.tipSeen = true end
+    end
 
--- Opening a macro's menu is the feature the tip points to, so it retires the tip, shown or not.
-local function tipUsed()
-    if tip and tip.info then tip:Acknowledge() else ns.db.tipSeen = true end
+    local function HideTip()
+        if tip and tip:IsShown() then tip:Hide() end
+    end
+    return ShowTip, Retire, HideTip
 end
 
 -- A menu entry's tooltip, through the menu's own SetTooltip: its label as the title, what it does, and for a
@@ -444,7 +447,8 @@ local function openMenu(button)
     local name, icon = GetMacroInfo(index)
     if not name then return end
     icon = tonumber(icon)
-    tipUsed()
+    -- Opening a macro's menu is the feature the tip points to.
+    retireTip()
     MenuUtil.CreateContextMenu(button, function(_, root)
         root:CreateTitle(name)
         local set = root:CreateButton("Set Icon", function() openIconDialog(index) end)
@@ -483,8 +487,14 @@ local function hookButton(_, button, _, new)
 end
 
 EventUtil.ContinueOnAddOnLoaded("Blizzard_MacroUI", function()
-    MacroFrame.MacroSelector.ScrollBox:RegisterCallback(ScrollBoxListMixin.Event.OnAcquiredFrame, hookButton, ns)
-    AttachTip(MacroFrame.MacroSelector, TIP_TEXT, HelpTip.Point.RightEdgeCenter)
+    local list = MacroFrame.MacroSelector
+    list.ScrollBox:RegisterCallback(ScrollBoxListMixin.Event.OnAcquiredFrame, hookButton, ns)
+    local showTip, hideTip
+    showTip, retireTip, hideTip = AttachTip(list, TIP_TEXT, HelpTip.Point.RightEdgeCenter)
+    -- /emi intro brings the tip back at once while the macro window is open, else at its next open.
+    function ns.ShowTip()
+        if list:IsVisible() then showTip() end
+    end
     -- Blizzard's own icon picker (Change Name/Icon) opens where the tip stands, so the tip makes way for it.
     MacroPopupFrame:HookScript("OnShow", hideTip)
 end)
