@@ -255,12 +255,13 @@ local function refreshGrid()
     refreshSubject()
 end
 
--- Sets a macro's icon and says so when the game refuses it. Returns false only when combat blocks the change.
+-- Sets a macro's icon and says so when the game refuses it. Returns false only when combat blocks the change,
+-- which shows as the game's own red error text, as a refused click does.
 local function setIcon(index, id)
     local name = GetMacroInfo(index)
     if not (id and name) then return true end
     if InCombatLockdown() then
-        ns.Print("Macros change only out of combat.")
+        UIErrorsFrame:AddExternalErrorMessage("Macros change only out of combat.")
         return false
     end
     -- The name is passed again on purpose: Forever kept the old icon when it was nil.

@@ -94,8 +94,11 @@ IsControlKeyDown = function() return false end
 EditBox_HighlightText = function() end
 GREEN_FONT_COLOR = { GetRGB = function() return 0, 1, 0 end }
 C_Timer = { After = function(_, fn) fn() end }
-local copied = 0
-UIErrorsFrame = { AddMessage = function() copied = copied + 1 end }
+local copied, errors = 0, {}
+UIErrorsFrame = {
+    AddMessage = function() copied = copied + 1 end,
+    AddExternalErrorMessage = function(_, message) errors[#errors + 1] = message end,
+}
 local menu
 MenuUtil = { CreateContextMenu = function(owner, gen)
     menu = { title = nil, items = {}, enabled = {} }
@@ -111,7 +114,8 @@ MenuUtil = { CreateContextMenu = function(owner, gen)
 end }
 wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
 CreateSimpleTextureMarkup = function(icon) return "|T" .. icon .. "|t" end
-InCombatLockdown = function() return false end
+local inCombat = false
+InCombatLockdown = function() return inCombat end
 GetMacroIcons = function(t) for _, v in ipairs({ 134400, "loose_name", 135808, 7808148 }) do t[#t + 1] = v end end
 GetMacroItemIcons = function(t) for _, v in ipairs({ 133971, 134400 }) do t[#t + 1] = v end end
 GetMacroInfo = function(i) local m = macros[i]; if m then return m[1], m[2], m[3] end end
@@ -203,6 +207,17 @@ box:SetText("fish")
 assert(#grid.items == 0)
 click(dialog, OKAY)
 assert(#edits == 4, "text without an ID applied")
+dialog:Hide()
+
+-- In combat Okay is refused with the game's red error text, no chat line, and the dialog stays open.
+setIcon()
+box:SetText("7808148")
+inCombat = true
+local lines = #printed
+click(dialog, OKAY)
+assert(#edits == 4 and dialog.shown, "combat did not block the change")
+assert(#errors == 1 and errors[1] == "Macros change only out of combat." and #printed == lines, "combat refusal")
+inCombat = false
 dialog:Hide()
 
 -- The link dialog keeps its link, and one copy keypress confirms and closes it, as in Player Armory Link.
