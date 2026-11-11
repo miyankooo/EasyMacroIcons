@@ -7,7 +7,7 @@ local STRIDE = 9
 local ROWS = 5
 local ICON_BUTTON = 36   -- SelectorButtonTemplate's size, Blizzard_SelectorUI.xml
 
--- Sizes on the design system's 4 px grid.
+-- Sizes on the 4 px grid.
 local TIGHT = 4           -- label to control, hint under a field
 local GAP = 8             -- between related controls, heading to body
 local ICON = 16           -- inline icons
@@ -397,7 +397,7 @@ end
 local TIP_TEXT = "Right-click a macro here to set, copy or paste its icon."
 local retireTip
 
--- The skill's recipe, plus a third return that hides the tip without marking it seen, for Blizzard's own icon
+-- The yellow help tip, plus a third return that hides the tip without marking it seen, for Blizzard's own icon
 -- picker, which opens where the tip stands.
 local function AttachTip(target, text, targetPoint, relativeRegion)
     local tip
