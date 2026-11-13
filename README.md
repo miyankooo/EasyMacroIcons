@@ -22,4 +22,6 @@ A WoW Forever addon that sets any macro's icon from an icon ID, including icons 
 4. Right-click the macro again and pick Set Icon.
 5. Type the ID or paste the icon's link, then press Enter or click Okay.
 
+Commands: `/emi intro` and `/emi help`.
+
 To give a macro the icon of another one, right-click the first macro and pick Copy Icon, then right-click the second and pick Paste Icon.
